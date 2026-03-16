@@ -278,8 +278,8 @@
     <div class="form-group"><label>Password</label><input class="form-input" type="password" id="loginPassword" placeholder="••••••••" onkeydown="if(event.key==='Enter')doLogin()"/></div>
     <button class="btn btn-primary" style="width:100%;padding:.72rem;margin-top:.4rem;" onclick="doLogin()">Sign In</button>
     <div class="modal-footer">
-      <strong>Demo Retailer:</strong> sonu@demo.com / demo123<br>
-      <strong>Demo Wholesaler:</strong> raj@demo.com / demo123<br><br>
+      <strong>Demo Retailer:</strong> <a href="/cdn-cgi/l/email-protection" class="__cf_email__" data-cfemail="74071b1a01341011191b5a171b19">[email&#160;protected]</a> / demo123<br>
+      <strong>Demo Wholesaler:</strong> <a href="/cdn-cgi/l/email-protection" class="__cf_email__" data-cfemail="7e0c1f143e1a1b1311501d1113">[email&#160;protected]</a> / demo123<br><br>
       No account? <a onclick="switchModal('login','register')">Register here</a>
     </div>
   </div>
@@ -408,169 +408,173 @@
 
 <div class="toast-container" id="toastContainer"></div>
 
-<script>
-// ═══ STATE ═══
-let user  = JSON.parse(localStorage.getItem('wc_user') || 'null');
-let token = localStorage.getItem('wc_token');
-let activeCategory = 'All';
-let currentOrderProduct = null;
-let currentQty = 50;
-let editingProductId = null;
-let stockTargetId = null;
-let statusTargetId = null;
-let activeDashTab = 'orders';
+<script data-cfasync="false" src="/cdn-cgi/scripts/5c5dd728/cloudflare-static/email-decode.min.js"></script><script>
+// ═══════════════════════════════════════════════════════════════
+//  WholeCART v3 — Frontend (talks to real Neon PostgreSQL backend)
+//  All data comes from http://localhost:5000/api  — no localStorage DB
+// ═══════════════════════════════════════════════════════════════
+const API = 'http://localhost:5000/api';
 
-// ═══ PERSISTENT DB ═══
-const DEFAULT_DB = {
-  products:[
-    {id:1,name:'Basmati Rice',category:'Grains',price:45,bulkPrice:38,minQty:50,stock:1200,unit:'kg',sellerId:2,seller:'Raj Wholesale',image:'🌾',rating:4.5,reviews:128,desc:'Premium long-grain basmati'},
-    {id:2,name:'Sunflower Oil',category:'Oils',price:120,bulkPrice:98,minQty:20,stock:500,unit:'L',sellerId:2,seller:'Raj Wholesale',image:'🫒',rating:4.2,reviews:85,desc:'Cold-pressed sunflower oil'},
-    {id:3,name:'Sugar',category:'Grains',price:40,bulkPrice:34,minQty:100,stock:3000,unit:'kg',sellerId:2,seller:'Raj Wholesale',image:'🍬',rating:4.7,reviews:210,desc:'Refined white sugar'},
-    {id:4,name:'Wheat Flour',category:'Grains',price:35,bulkPrice:29,minQty:100,stock:2000,unit:'kg',sellerId:2,seller:'Raj Wholesale',image:'🌾',rating:4.3,reviews:156,desc:'Fine wheat chakki atta'},
-    {id:5,name:'Toor Dal',category:'Pulses',price:90,bulkPrice:78,minQty:25,stock:800,unit:'kg',sellerId:2,seller:'Raj Wholesale',image:'🫘',rating:4.6,reviews:97,desc:'Split pigeon peas'},
-    {id:6,name:'Mustard Oil',category:'Oils',price:135,bulkPrice:115,minQty:20,stock:350,unit:'L',sellerId:2,seller:'Raj Wholesale',image:'🫙',rating:4.4,reviews:72,desc:'Kachi ghani mustard oil'},
-    {id:7,name:'Moong Dal',category:'Pulses',price:95,bulkPrice:82,minQty:25,stock:600,unit:'kg',sellerId:2,seller:'Raj Wholesale',image:'🫘',rating:4.5,reviews:63,desc:'Split green lentils'},
-    {id:8,name:'Rock Salt',category:'Spices',price:25,bulkPrice:18,minQty:50,stock:1500,unit:'kg',sellerId:2,seller:'Raj Wholesale',image:'🧂',rating:4.8,reviews:340,desc:'Natural sendha namak'},
-  ],
-  users:[
-    {id:1,name:'Sonu Meena',email:'sonu@demo.com',password:'demo123',role:'retailer'},
-    {id:2,name:'Raj Wholesale',email:'raj@demo.com',password:'demo123',role:'wholesaler'},
-  ],
-  orders:[
-    {id:1,buyerId:1,buyerName:'Sonu Meena',sellerId:2,productId:1,productName:'Basmati Rice',quantity:100,totalPrice:3800,status:'Delivered',date:'2025-01-10'},
-    {id:2,buyerId:1,buyerName:'Sonu Meena',sellerId:2,productId:3,productName:'Sugar',quantity:200,totalPrice:6800,status:'InTransit',date:'2025-03-05'},
-  ],
-  nextProductId:9,
-  nextOrderId:3,
-  nextUserId:3
-};
+// ─── State ────────────────────────────────────────────────────
+let user            = JSON.parse(localStorage.getItem('wc_user') || 'null');
+let token           = localStorage.getItem('wc_token');
+let activeCategory  = 'All';
+let currentProduct  = null;   // product being ordered
+let currentQty      = 50;
+let editProductData = null;   // product being edited (full object)
+let stockTargetId   = null;
+let statusTargetId  = null;
+let activeDashTab   = 'orders';
+// cache for edit-product modal
+let productCache    = {};
 
-let DB = JSON.parse(localStorage.getItem('wc_db') || JSON.stringify(DEFAULT_DB));
-function saveDB(){ localStorage.setItem('wc_db', JSON.stringify(DB)); }
-
-// ═══ NAV ═══
-function navigate(page){
-  document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
-  document.getElementById('page-'+page).classList.add('active');
-  document.querySelectorAll('.nav-link').forEach(l=>l.classList.toggle('active', l.dataset.page===page));
-  if(page==='products') loadProducts();
-  if(page==='orders') loadOrders();
-  if(page==='dashboard') loadDashboard();
-  if(page==='profile') loadProfile();
-  window.scrollTo(0,0);
+// ─── API helper ───────────────────────────────────────────────
+async function api(path, opts = {}) {
+  const headers = { 'Content-Type': 'application/json' };
+  if (token) headers['Authorization'] = 'Bearer ' + token;
+  const res = await fetch(API + path, { ...opts, headers: { ...headers, ...(opts.headers||{}) } });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.message || 'Request failed');
+  return data;
 }
 
-function updateNavAuth(){
-  const isWS = user && user.role==='wholesaler';
-  if(user){
-    document.getElementById('navGuest').style.display='none';
-    document.getElementById('navUser').style.display='flex';
-    document.getElementById('navUserName').textContent=(isWS?'🏭':'👋')+' '+user.name.split(' ')[0];
-    document.getElementById('navOrders').style.display=isWS?'none':'';
-    document.getElementById('navDash').style.display='';
-    document.getElementById('wsAddBtn').style.display=isWS?'':'none';
+// ─── Navigation ───────────────────────────────────────────────
+function navigate(page) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.getElementById('page-' + page).classList.add('active');
+  document.querySelectorAll('.nav-link').forEach(l => l.classList.toggle('active', l.dataset.page === page));
+  if (page === 'products')  loadProducts();
+  if (page === 'orders')    loadOrders();
+  if (page === 'dashboard') loadDashboard();
+  if (page === 'profile')   loadProfile();
+  window.scrollTo(0, 0);
+}
+
+function updateNavAuth() {
+  const isWS = user && user.role === 'wholesaler';
+  if (user) {
+    document.getElementById('navGuest').style.display = 'none';
+    document.getElementById('navUser').style.display  = 'flex';
+    document.getElementById('navUserName').textContent = (isWS ? '🏭' : '👋') + ' ' + user.name.split(' ')[0];
+    document.getElementById('navOrders').style.display = isWS ? 'none' : '';
+    document.getElementById('navDash').style.display   = '';
+    document.getElementById('wsAddBtn').style.display  = isWS ? '' : 'none';
   } else {
-    document.getElementById('navGuest').style.display='flex';
-    document.getElementById('navUser').style.display='none';
-    document.getElementById('navOrders').style.display='none';
-    document.getElementById('navDash').style.display='none';
-    document.getElementById('wsAddBtn').style.display='none';
+    document.getElementById('navGuest').style.display  = 'flex';
+    document.getElementById('navUser').style.display   = 'none';
+    document.getElementById('navOrders').style.display = 'none';
+    document.getElementById('navDash').style.display   = 'none';
+    document.getElementById('wsAddBtn').style.display  = 'none';
   }
 }
 
-// ═══ AUTH ═══
-function doLogin(){
-  const email=document.getElementById('loginEmail').value.trim();
-  const pwd=document.getElementById('loginPassword').value;
-  const errEl=document.getElementById('loginErr');
-  errEl.style.display='none';
-  const u=DB.users.find(u=>u.email===email && u.password===pwd);
-  if(!u){errEl.textContent='Wrong email or password';errEl.style.display='block';return;}
-  user={id:u.id,name:u.name,email:u.email,role:u.role};
-  token='local_'+u.id;
-  localStorage.setItem('wc_token',token);
-  localStorage.setItem('wc_user',JSON.stringify(user));
-  closeModal('login');
-  updateNavAuth();
-  showToast('Welcome back, '+user.name.split(' ')[0]+'! 🎉','success');
-  navigate(user.role==='wholesaler'?'dashboard':'products');
+// ─── Auth ─────────────────────────────────────────────────────
+async function doLogin() {
+  const email = document.getElementById('loginEmail').value.trim();
+  const pwd   = document.getElementById('loginPassword').value;
+  const errEl = document.getElementById('loginErr');
+  errEl.style.display = 'none';
+  try {
+    const data = await api('/auth/login', { method: 'POST', body: JSON.stringify({ email, password: pwd }) });
+    token = data.token; user = data.user;
+    localStorage.setItem('wc_token', token);
+    localStorage.setItem('wc_user', JSON.stringify(user));
+    closeModal('login');
+    updateNavAuth();
+    showToast('Welcome back, ' + user.name.split(' ')[0] + '! 🎉', 'success');
+    navigate(user.role === 'wholesaler' ? 'dashboard' : 'products');
+  } catch(e) { errEl.textContent = e.message; errEl.style.display = 'block'; }
 }
 
-function doRegister(){
-  const name=document.getElementById('regName').value.trim();
-  const email=document.getElementById('regEmail').value.trim();
-  const pwd=document.getElementById('regPassword').value;
-  const role=document.getElementById('regRole').value;
-  const errEl=document.getElementById('regErr');
-  errEl.style.display='none';
-  if(!name||!email||!pwd){errEl.textContent='All fields are required';errEl.style.display='block';return;}
-  if(DB.users.find(u=>u.email===email)){errEl.textContent='Email already registered';errEl.style.display='block';return;}
-  const newUser={id:DB.nextUserId++,name,email,password:pwd,role};
-  DB.users.push(newUser);saveDB();
-  user={id:newUser.id,name,email,role};
-  token='local_'+newUser.id;
-  localStorage.setItem('wc_token',token);
-  localStorage.setItem('wc_user',JSON.stringify(user));
-  closeModal('register');
-  updateNavAuth();
-  showToast('Welcome to WholeCART, '+name.split(' ')[0]+'! 🚀','success');
-  navigate(role==='wholesaler'?'dashboard':'products');
+async function doRegister() {
+  const name  = document.getElementById('regName').value.trim();
+  const email = document.getElementById('regEmail').value.trim();
+  const pwd   = document.getElementById('regPassword').value;
+  const role  = document.getElementById('regRole').value;
+  const errEl = document.getElementById('regErr');
+  errEl.style.display = 'none';
+  if (!name || !email || !pwd) { errEl.textContent = 'All fields are required'; errEl.style.display = 'block'; return; }
+  try {
+    const data = await api('/auth/register', { method: 'POST', body: JSON.stringify({ name, email, password: pwd, role }) });
+    token = data.token; user = data.user;
+    localStorage.setItem('wc_token', token);
+    localStorage.setItem('wc_user', JSON.stringify(user));
+    closeModal('register');
+    updateNavAuth();
+    showToast('Welcome to WholeCART, ' + name.split(' ')[0] + '! 🚀', 'success');
+    navigate(role === 'wholesaler' ? 'dashboard' : 'products');
+  } catch(e) { errEl.textContent = e.message; errEl.style.display = 'block'; }
 }
 
-function logout(){
-  token=null;user=null;
+function logout() {
+  token = null; user = null;
   localStorage.removeItem('wc_token');
   localStorage.removeItem('wc_user');
   updateNavAuth();
   navigate('home');
-  showToast('Logged out successfully','info');
+  showToast('Logged out successfully', 'info');
 }
 
-// ═══ PRODUCTS ═══
-function loadProducts(){
-  const cats=['All',...new Set(DB.products.map(p=>p.category))];
-  const isWS=user&&user.role==='wholesaler';
-  document.getElementById('productsSubtitle').textContent=isWS?'Your listed products + all products on the platform':'Browse wholesale catalog — bulk discounts applied automatically';
-  document.getElementById('wsAddBtn').style.display=isWS?'':'none';
-  renderFilterTabs(cats);
-  filterProducts();
+// ─── Products ─────────────────────────────────────────────────
+async function loadProducts() {
+  const isWS = user && user.role === 'wholesaler';
+  document.getElementById('productsSubtitle').textContent = isWS
+    ? 'Your listed products + all products on the platform'
+    : 'Browse wholesale catalog — bulk discounts applied automatically';
+  document.getElementById('wsAddBtn').style.display = isWS ? '' : 'none';
+
+  try {
+    const [cats, products] = await Promise.all([
+      api('/categories'),
+      api('/products' + (activeCategory !== 'All' ? '?category=' + encodeURIComponent(activeCategory) : ''))
+    ]);
+    renderFilterTabs(cats);
+    renderProducts(products);
+  } catch(e) {
+    document.getElementById('productsGrid').innerHTML = '<div class="empty"><div class="empty-icon">⚠️</div><p>Could not load products — is the backend running?</p></div>';
+  }
 }
 
-function renderFilterTabs(cats){
-  document.getElementById('filterTabs').innerHTML=cats.map(c=>
-    `<button class="filter-tab${c===activeCategory?' active':''}" onclick="setCategory('${c}')">${c}</button>`
+function renderFilterTabs(cats) {
+  document.getElementById('filterTabs').innerHTML = cats.map(c =>
+    `<button class="filter-tab${c === activeCategory ? ' active' : ''}" onclick="setCategory('${c}')">${c}</button>`
   ).join('');
 }
 
-function setCategory(cat){
-  activeCategory=cat;
-  document.querySelectorAll('.filter-tab').forEach(t=>t.classList.toggle('active',t.textContent===cat));
-  filterProducts();
+function setCategory(cat) {
+  activeCategory = cat;
+  document.querySelectorAll('.filter-tab').forEach(t => t.classList.toggle('active', t.textContent === cat));
+  loadProducts();
 }
 
-function filterProducts(){
-  const q=document.getElementById('searchInput').value.toLowerCase();
-  let filtered=[...DB.products];
-  if(activeCategory!=='All') filtered=filtered.filter(p=>p.category===activeCategory);
-  if(q) filtered=filtered.filter(p=>p.name.toLowerCase().includes(q)||p.category.toLowerCase().includes(q));
-  renderProducts(filtered);
+async function filterProducts() {
+  const q = document.getElementById('searchInput').value.trim();
+  try {
+    let path = '/products?';
+    if (activeCategory !== 'All') path += 'category=' + encodeURIComponent(activeCategory) + '&';
+    if (q) path += 'search=' + encodeURIComponent(q);
+    const products = await api(path);
+    renderProducts(products);
+  } catch(e) {}
 }
 
-function renderProducts(products){
-  const grid=document.getElementById('productsGrid');
-  const isWS=user&&user.role==='wholesaler';
-  if(!products.length){grid.innerHTML='<div class="empty"><div class="empty-icon">📦</div><p>No products found</p></div>';return;}
-  grid.innerHTML=products.map(p=>{
-    const disc=Math.round((p.price-p.bulkPrice)/p.price*100);
-    const stockPct=Math.min(100,Math.round(p.stock/15));
-    const stockColor=p.stock>200?'var(--green)':p.stock>50?'var(--yellow)':'var(--red)';
-    const isMine=isWS&&p.sellerId===user.id;
+function renderProducts(products) {
+  const grid = document.getElementById('productsGrid');
+  const isWS = user && user.role === 'wholesaler';
+  if (!products.length) { grid.innerHTML = '<div class="empty"><div class="empty-icon">📦</div><p>No products found</p></div>'; return; }
+  grid.innerHTML = products.map(p => {
+    const disc = Math.round((p.price - p.bulkPrice) / p.price * 100);
+    const stockPct = Math.min(100, Math.round(p.stock / 15));
+    const stockColor = p.stock > 200 ? 'var(--green)' : p.stock > 50 ? 'var(--yellow)' : 'var(--red)';
+    const isMine = isWS && p.sellerId === user.id;
+    // cache product for edit modal
+    productCache[p.id] = p;
     return `
     <div class="product-card">
       <div class="product-img">
-        <span>${p.image||'📦'}</span>
+        <span>${p.image || '📦'}</span>
         <span class="product-badge">-${disc}%</span>
-        ${isMine?'<span class="product-badge-mine">Mine</span>':''}
+        ${isMine ? '<span class="product-badge-mine">Mine</span>' : ''}
       </div>
       <div class="product-body">
         <div class="product-name">${p.name}</div>
@@ -588,293 +592,320 @@ function renderProducts(products){
       </div>
       <div class="product-footer">
         ${isMine
-          ?`<button class="btn btn-ghost btn-sm" style="flex:1;" onclick="openEditProductModal(${p.id})">✏️ Edit</button>
-            <button class="btn btn-ghost btn-sm" onclick="openStockModal(${p.id})">📦 Stock</button>
-            <button class="btn btn-danger btn-sm" onclick="deleteProduct(${p.id})">🗑</button>`
-          :`<button class="btn btn-accent" style="flex:1;" onclick="openOrderModal(${p.id})">Order Now</button>`
+          ? `<button class="btn btn-ghost btn-sm" style="flex:1;" onclick="openEditProductModal(${p.id})">✏️ Edit</button>
+             <button class="btn btn-ghost btn-sm" onclick="openStockModal(${p.id})">📦 Stock</button>
+             <button class="btn btn-danger btn-sm" onclick="deleteProduct(${p.id})">🗑</button>`
+          : `<button class="btn btn-accent" style="flex:1;" onclick="openOrderModal(${p.id})">Order Now</button>`
         }
       </div>
     </div>`;
   }).join('');
 }
 
-// ═══ ADD / EDIT PRODUCT ═══
-function openAddProductModal(){
-  if(!user||user.role!=='wholesaler'){openModal('login');return;}
-  editingProductId=null;
-  document.getElementById('prodModalTitle').textContent='＋ Add New Product';
-  document.getElementById('prodModalSub').textContent='List a new product in your inventory';
-  document.getElementById('prodSaveBtn').textContent='Add Product';
-  ['pName','pMrp','pBulkPrice','pMinQty','pStock','pDesc'].forEach(id=>document.getElementById(id).value='');
-  const icons=['🌾','🫒','🍬','🫘','🧂','🫙','🥛','🍵','📦','🌿'];
-  document.getElementById('pEmoji').value=icons[Math.floor(Math.random()*icons.length)];
-  document.getElementById('pCategory').value='Grains';
-  document.getElementById('pUnit').value='kg';
-  document.getElementById('prodErr').style.display='none';
+// ─── Add / Edit Product ───────────────────────────────────────
+function openAddProductModal() {
+  if (!user || user.role !== 'wholesaler') { openModal('login'); return; }
+  editProductData = null;
+  document.getElementById('prodModalTitle').textContent = '＋ Add New Product';
+  document.getElementById('prodModalSub').textContent   = 'List a new product in your inventory';
+  document.getElementById('prodSaveBtn').textContent    = 'Add Product';
+  ['pName','pMrp','pBulkPrice','pMinQty','pStock','pDesc'].forEach(id => document.getElementById(id).value = '');
+  const icons = ['🌾','🫒','🍬','🫘','🧂','🫙','🥛','🍵','📦','🌿'];
+  document.getElementById('pEmoji').value    = icons[Math.floor(Math.random() * icons.length)];
+  document.getElementById('pCategory').value = 'Grains';
+  document.getElementById('pUnit').value     = 'kg';
+  document.getElementById('prodErr').style.display = 'none';
   openModal('product');
 }
 
-function openEditProductModal(id){
-  const p=DB.products.find(x=>x.id===id);
-  if(!p)return;
-  editingProductId=id;
-  document.getElementById('prodModalTitle').textContent='✏️ Edit Product';
-  document.getElementById('prodModalSub').textContent='Update details for '+p.name;
-  document.getElementById('prodSaveBtn').textContent='Save Changes';
-  document.getElementById('pName').value=p.name;
-  document.getElementById('pCategory').value=p.category;
-  document.getElementById('pMrp').value=p.price;
-  document.getElementById('pBulkPrice').value=p.bulkPrice;
-  document.getElementById('pMinQty').value=p.minQty;
-  document.getElementById('pUnit').value=p.unit;
-  document.getElementById('pStock').value=p.stock;
-  document.getElementById('pEmoji').value=p.image||'📦';
-  document.getElementById('pDesc').value=p.desc||'';
-  document.getElementById('prodErr').style.display='none';
+function openEditProductModal(id) {
+  const p = productCache[id];
+  if (!p) return;
+  editProductData = p;
+  document.getElementById('prodModalTitle').textContent = '✏️ Edit Product';
+  document.getElementById('prodModalSub').textContent   = 'Update details for ' + p.name;
+  document.getElementById('prodSaveBtn').textContent    = 'Save Changes';
+  document.getElementById('pName').value      = p.name;
+  document.getElementById('pCategory').value  = p.category;
+  document.getElementById('pMrp').value       = p.price;
+  document.getElementById('pBulkPrice').value = p.bulkPrice;
+  document.getElementById('pMinQty').value    = p.minQty;
+  document.getElementById('pUnit').value      = p.unit;
+  document.getElementById('pStock').value     = p.stock;
+  document.getElementById('pEmoji').value     = p.image || '📦';
+  document.getElementById('pDesc').value      = p.desc || '';
+  document.getElementById('prodErr').style.display = 'none';
   openModal('product');
 }
 
-function saveProduct(){
-  const errEl=document.getElementById('prodErr');
-  errEl.style.display='none';
-  const name=document.getElementById('pName').value.trim();
-  const category=document.getElementById('pCategory').value;
-  const price=parseFloat(document.getElementById('pMrp').value);
-  const bulkPrice=parseFloat(document.getElementById('pBulkPrice').value);
-  const minQty=parseInt(document.getElementById('pMinQty').value);
-  const unit=document.getElementById('pUnit').value;
-  const stock=parseInt(document.getElementById('pStock').value);
-  const image=document.getElementById('pEmoji').value.trim()||'📦';
-  const desc=document.getElementById('pDesc').value.trim();
-  if(!name||isNaN(price)||isNaN(bulkPrice)||isNaN(minQty)||isNaN(stock)){errEl.textContent='Please fill all required fields (*)';errEl.style.display='block';return;}
-  if(bulkPrice>=price){errEl.textContent='Bulk price must be lower than MRP';errEl.style.display='block';return;}
-  if(stock<0||minQty<1){errEl.textContent='Stock must be ≥ 0 and Min Qty ≥ 1';errEl.style.display='block';return;}
-  if(editingProductId){
-    const idx=DB.products.findIndex(p=>p.id===editingProductId);
-    if(idx>-1) DB.products[idx]={...DB.products[idx],name,category,price,bulkPrice,minQty,unit,stock,image,desc};
-    showToast('Product updated: '+name,'success');
-  } else {
-    DB.products.push({id:DB.nextProductId++,name,category,price,bulkPrice,minQty,unit,stock,image,desc,sellerId:user.id,seller:user.name,rating:4.0,reviews:0});
-    showToast('Product listed: '+name+' ✅','success');
+async function saveProduct() {
+  const errEl = document.getElementById('prodErr');
+  errEl.style.display = 'none';
+  const name      = document.getElementById('pName').value.trim();
+  const category  = document.getElementById('pCategory').value;
+  const price     = parseFloat(document.getElementById('pMrp').value);
+  const bulkPrice = parseFloat(document.getElementById('pBulkPrice').value);
+  const minQty    = parseInt(document.getElementById('pMinQty').value);
+  const unit      = document.getElementById('pUnit').value;
+  const stock     = parseInt(document.getElementById('pStock').value);
+  const image     = document.getElementById('pEmoji').value.trim() || '📦';
+  const desc      = document.getElementById('pDesc').value.trim();
+
+  if (!name || isNaN(price) || isNaN(bulkPrice) || isNaN(minQty) || isNaN(stock)) {
+    errEl.textContent = 'Please fill all required fields (*)'; errEl.style.display = 'block'; return;
   }
-  saveDB();
-  closeModal('product');
-  loadProducts();
+  if (bulkPrice >= price) { errEl.textContent = 'Bulk price must be lower than MRP'; errEl.style.display = 'block'; return; }
+  if (stock < 0 || minQty < 1) { errEl.textContent = 'Stock ≥ 0 and Min Qty ≥ 1'; errEl.style.display = 'block'; return; }
+
+  const body = JSON.stringify({ name, category, price, bulkPrice, minQty, unit, stock, image, desc });
+  try {
+    if (editProductData) {
+      await api('/products/' + editProductData.id, { method: 'PUT', body });
+      showToast('Product updated: ' + name, 'success');
+    } else {
+      await api('/products', { method: 'POST', body });
+      showToast('Product listed: ' + name + ' ✅', 'success');
+    }
+    closeModal('product');
+    loadProducts();
+  } catch(e) { errEl.textContent = e.message; errEl.style.display = 'block'; }
 }
 
-function deleteProduct(id){
-  const p=DB.products.find(x=>x.id===id);
-  if(!p)return;
-  if(!confirm('Delete "'+p.name+'"? This cannot be undone.'))return;
-  DB.products=DB.products.filter(x=>x.id!==id);
-  saveDB();
-  loadProducts();
-  if(document.getElementById('page-dashboard').classList.contains('active'))loadDashboard();
-  showToast('Product deleted','info');
+async function deleteProduct(id) {
+  const p = productCache[id];
+  if (!confirm('Delete "' + (p ? p.name : 'this product') + '"? This cannot be undone.')) return;
+  try {
+    await api('/products/' + id, { method: 'DELETE' });
+    showToast('Product deleted', 'info');
+    loadProducts();
+    if (document.getElementById('page-dashboard').classList.contains('active')) loadDashboard();
+  } catch(e) { showToast(e.message, 'error'); }
 }
 
-// ═══ STOCK MODAL ═══
-function openStockModal(id){
-  const p=DB.products.find(x=>x.id===id);
-  if(!p)return;
-  stockTargetId=id;
-  document.getElementById('stockModalSub').textContent=p.image+' '+p.name+' — Current: '+p.stock+' '+p.unit;
-  document.getElementById('stockInput').value=p.stock;
-  document.getElementById('stockPriceInput').value=p.bulkPrice;
-  document.getElementById('stockMrpInput').value=p.price;
+// ─── Stock Modal ──────────────────────────────────────────────
+function openStockModal(id) {
+  const p = productCache[id];
+  if (!p) return;
+  stockTargetId = id;
+  document.getElementById('stockModalSub').textContent = p.image + ' ' + p.name + ' — Current: ' + p.stock + ' ' + p.unit;
+  document.getElementById('stockInput').value      = p.stock;
+  document.getElementById('stockPriceInput').value = p.bulkPrice;
+  document.getElementById('stockMrpInput').value   = p.price;
   openModal('stock');
 }
 
-function saveStock(){
-  const newStock=parseInt(document.getElementById('stockInput').value);
-  const newBulk=parseFloat(document.getElementById('stockPriceInput').value);
-  const newMrp=parseFloat(document.getElementById('stockMrpInput').value);
-  if(isNaN(newStock)||newStock<0){showToast('Invalid stock value','error');return;}
-  const idx=DB.products.findIndex(p=>p.id===stockTargetId);
-  if(idx>-1){
-    DB.products[idx].stock=newStock;
-    if(!isNaN(newBulk)&&newBulk>0) DB.products[idx].bulkPrice=newBulk;
-    if(!isNaN(newMrp)&&newMrp>0) DB.products[idx].price=newMrp;
-  }
-  saveDB();
-  closeModal('stock');
-  loadProducts();
-  if(document.getElementById('page-dashboard').classList.contains('active'))renderWholesalerInventory();
-  showToast('Inventory updated ✅','success');
+async function saveStock() {
+  const stock     = parseInt(document.getElementById('stockInput').value);
+  const bulkPrice = parseFloat(document.getElementById('stockPriceInput').value);
+  const price     = parseFloat(document.getElementById('stockMrpInput').value);
+  if (isNaN(stock) || stock < 0) { showToast('Invalid stock value', 'error'); return; }
+  try {
+    await api('/products/' + stockTargetId + '/stock', {
+      method: 'PATCH',
+      body: JSON.stringify({ stock, bulkPrice: isNaN(bulkPrice) ? undefined : bulkPrice, price: isNaN(price) ? undefined : price })
+    });
+    closeModal('stock');
+    showToast('Inventory updated ✅', 'success');
+    loadProducts();
+    if (document.getElementById('page-dashboard').classList.contains('active')) loadDashboard();
+  } catch(e) { showToast(e.message, 'error'); }
 }
 
-// ═══ ORDER MODAL ═══
-function openOrderModal(productId){
-  if(!user){openModal('login');showToast('Sign in to place an order','info');return;}
-  if(user.role==='wholesaler'){showToast('Wholesalers cannot place orders','error');return;}
-  const p=DB.products.find(x=>x.id===productId);
-  if(!p)return;
-  if(p.stock===0){showToast('This product is out of stock','error');return;}
-  currentOrderProduct=p;
-  currentQty=p.minQty;
-  document.getElementById('orderModalTitle').textContent='Order — '+p.name;
-  document.getElementById('orderProductInfo').innerHTML=`
+// ─── Order Modal ──────────────────────────────────────────────
+function openOrderModal(productId) {
+  if (!user) { openModal('login'); showToast('Sign in to place an order', 'info'); return; }
+  if (user.role === 'wholesaler') { showToast('Wholesalers cannot place orders', 'error'); return; }
+  const p = productCache[productId];
+  if (!p) return;
+  if (p.stock === 0) { showToast('This product is out of stock', 'error'); return; }
+  currentProduct = p;
+  currentQty = p.minQty;
+  document.getElementById('orderModalTitle').textContent = 'Order — ' + p.name;
+  document.getElementById('orderProductInfo').innerHTML = `
     <div class="order-info-row"><span>Product</span><span>${p.image} ${p.name}</span></div>
     <div class="order-info-row"><span>Bulk Price</span><span style="color:var(--accent2)">₹${p.bulkPrice}/${p.unit}</span></div>
     <div class="order-info-row"><span>Min. Quantity</span><span>${p.minQty} ${p.unit}</span></div>
     <div class="order-info-row"><span>Available Stock</span><span>${p.stock} ${p.unit}</span></div>
     <div class="order-info-row"><span>Seller</span><span>${p.seller}</span></div>`;
-  const slider=document.getElementById('qtySlider');
-  slider.min=p.minQty;slider.max=Math.min(p.stock,2000);slider.value=p.minQty;
-  document.getElementById('orderErr').style.display='none';
+  const slider = document.getElementById('qtySlider');
+  slider.min = p.minQty; slider.max = Math.min(p.stock, 2000); slider.value = p.minQty;
+  document.getElementById('orderErr').style.display = 'none';
   updateQtyDisplay();
   openModal('order');
 }
 
-function adjustQty(d){
-  if(!currentOrderProduct)return;
-  currentQty=Math.max(currentOrderProduct.minQty,Math.min(currentOrderProduct.stock,currentQty+d));
-  document.getElementById('qtySlider').value=currentQty;
+function adjustQty(d) {
+  if (!currentProduct) return;
+  currentQty = Math.max(currentProduct.minQty, Math.min(currentProduct.stock, currentQty + d));
+  document.getElementById('qtySlider').value = currentQty;
   updateQtyDisplay();
 }
-
-function sliderQty(v){currentQty=parseInt(v);updateQtyDisplay();}
-
-function updateQtyDisplay(){
-  document.getElementById('qtyDisplay').textContent=currentQty;
-  document.getElementById('totalPriceDisplay').textContent='₹'+(currentOrderProduct.bulkPrice*currentQty).toLocaleString('en-IN');
+function sliderQty(v) { currentQty = parseInt(v); updateQtyDisplay(); }
+function updateQtyDisplay() {
+  document.getElementById('qtyDisplay').textContent = currentQty;
+  document.getElementById('totalPriceDisplay').textContent = '₹' + (currentProduct.bulkPrice * currentQty).toLocaleString('en-IN');
 }
 
-function confirmOrder(){
-  const errEl=document.getElementById('orderErr');
-  errEl.style.display='none';
-  const p=currentOrderProduct;
-  if(currentQty<p.minQty){errEl.textContent='Min. order is '+p.minQty+' '+p.unit;errEl.style.display='block';return;}
-  if(currentQty>p.stock){errEl.textContent='Insufficient stock';errEl.style.display='block';return;}
-  const order={
-    id:DB.nextOrderId++,buyerId:user.id,buyerName:user.name,
-    sellerId:p.sellerId,productId:p.id,productName:p.name,
-    quantity:currentQty,totalPrice:p.bulkPrice*currentQty,
-    status:'Pending',date:new Date().toISOString().split('T')[0]
-  };
-  DB.orders.push(order);
-  const idx=DB.products.findIndex(x=>x.id===p.id);
-  if(idx>-1) DB.products[idx].stock-=currentQty;
-  saveDB();
-  closeModal('order');
-  showToast('Order placed! ₹'+order.totalPrice.toLocaleString('en-IN')+' — awaiting wholesaler confirmation 🎉','success');
+async function confirmOrder() {
+  const errEl = document.getElementById('orderErr');
+  errEl.style.display = 'none';
+  try {
+    const order = await api('/orders', {
+      method: 'POST',
+      body: JSON.stringify({ productId: currentProduct.id, quantity: currentQty })
+    });
+    closeModal('order');
+    showToast('Order #' + order.id + ' placed! ₹' + order.totalPrice.toLocaleString('en-IN') + ' — awaiting wholesaler confirmation 🎉', 'success');
+    // refresh product stock on the page
+    loadProducts();
+  } catch(e) { errEl.textContent = e.message; errEl.style.display = 'block'; }
 }
 
-// ═══ ORDERS PAGE ═══
-function loadOrders(){
-  const el=document.getElementById('ordersContent');
-  if(!user){el.innerHTML='<div class="empty"><div class="empty-icon">🔒</div><p>Sign in to view your orders</p></div>';return;}
-  const orders=DB.orders.filter(o=>o.buyerId===user.id);
-  if(!orders.length){el.innerHTML='<div class="empty"><div class="empty-icon">📋</div><p>No orders yet — <a style="color:var(--accent);cursor:pointer" onclick="navigate(\'products\')">start buying!</a></p></div>';return;}
-  el.innerHTML=`<div class="table-wrap"><table>
-    <thead><tr><th>#</th><th>Product</th><th>Qty</th><th>Amount</th><th>Status</th><th>Date</th></tr></thead>
-    <tbody>${[...orders].reverse().map(o=>`
-      <tr>
-        <td style="color:var(--muted)">#${o.id}</td>
-        <td><strong>${o.productName}</strong></td>
-        <td>${o.quantity.toLocaleString()}</td>
-        <td style="color:var(--accent2);font-weight:600">₹${o.totalPrice.toLocaleString('en-IN')}</td>
-        <td><span class="status-badge s-${o.status.replace(/ /g,'')}">${o.status.replace('InTransit','In Transit')}</span></td>
-        <td style="color:var(--muted)">${o.date}</td>
-      </tr>`).join('')}
-    </tbody>
-  </table></div>`;
+// ─── Orders Page (Retailer) ───────────────────────────────────
+async function loadOrders() {
+  const el = document.getElementById('ordersContent');
+  if (!user) { el.innerHTML = '<div class="empty"><div class="empty-icon">🔒</div><p>Sign in to view your orders</p></div>'; return; }
+  el.innerHTML = '<div class="empty"><div class="empty-icon" style="animation:spin 1s linear infinite">⟳</div><p>Loading orders…</p></div>';
+  try {
+    const orders = await api('/orders');
+    if (!orders.length) {
+      el.innerHTML = '<div class="empty"><div class="empty-icon">📋</div><p>No orders yet — <a style="color:var(--accent);cursor:pointer" onclick="navigate(\'products\')">start buying!</a></p></div>';
+      return;
+    }
+    el.innerHTML = `<div class="table-wrap"><table>
+      <thead><tr><th>#</th><th>Product</th><th>Qty</th><th>Amount</th><th>Status</th><th>Date</th></tr></thead>
+      <tbody>${orders.map(o => `
+        <tr>
+          <td style="color:var(--muted)">#${o.id}</td>
+          <td><strong>${o.productName}</strong></td>
+          <td>${o.quantity.toLocaleString()}</td>
+          <td style="color:var(--accent2);font-weight:600">₹${o.totalPrice.toLocaleString('en-IN')}</td>
+          <td><span class="status-badge s-${o.status}">${fmtStatus(o.status)}</span></td>
+          <td style="color:var(--muted)">${o.date}</td>
+        </tr>`).join('')}
+      </tbody>
+    </table></div>`;
+  } catch(e) {
+    el.innerHTML = '<div class="empty"><div class="empty-icon">⚠️</div><p>' + e.message + '</p></div>';
+  }
 }
 
-// ═══ DASHBOARD ═══
-function loadDashboard(){
-  if(!user){navigate('home');return;}
-  if(user.role==='wholesaler') loadWholesalerDashboard();
-  else loadRetailerDashboard();
+// ─── Dashboard ────────────────────────────────────────────────
+async function loadDashboard() {
+  if (!user) { navigate('home'); return; }
+  if (user.role === 'wholesaler') await loadWholesalerDashboard();
+  else await loadRetailerDashboard();
 }
 
-function loadRetailerDashboard(){
-  document.getElementById('dashTitle').textContent='My Dashboard';
-  document.getElementById('dashSub').textContent='Your purchase activity overview';
-  document.getElementById('dashRolePill').innerHTML='<span class="role-pill role-retailer">🛒 Retailer</span>';
-  const orders=DB.orders.filter(o=>o.buyerId===user.id);
-  const spent=orders.reduce((s,o)=>s+o.totalPrice,0);
-  document.getElementById('dashGrid').innerHTML=`
-    <div class="stat-card"><div class="stat-card-label">Total Orders</div><div class="stat-card-value v-accent">${orders.length}</div></div>
-    <div class="stat-card"><div class="stat-card-label">Total Spent</div><div class="stat-card-value v-orange" style="font-size:1.3rem;">₹${spent.toLocaleString('en-IN')}</div></div>
-    <div class="stat-card"><div class="stat-card-label">Delivered</div><div class="stat-card-value v-green">${orders.filter(o=>o.status==='Delivered').length}</div></div>
-    <div class="stat-card"><div class="stat-card-label">In Transit</div><div class="stat-card-value v-yellow">${orders.filter(o=>o.status==='InTransit').length}</div></div>
-    <div class="stat-card"><div class="stat-card-label">Pending</div><div class="stat-card-value v-accent">${orders.filter(o=>o.status==='Pending').length}</div></div>`;
-  document.getElementById('dashTabs').innerHTML='';
-  if(!orders.length){document.getElementById('dashContent').innerHTML='<div class="empty"><div class="empty-icon">📋</div><p>No orders yet — <a style="color:var(--accent);cursor:pointer" onclick="navigate(\'products\')">browse products</a></p></div>';return;}
-  document.getElementById('dashContent').innerHTML=`<h3 style="font-family:\'Syne\',sans-serif;margin-bottom:1rem;">Recent Orders</h3><div class="table-wrap"><table>
-    <thead><tr><th>Product</th><th>Qty</th><th>Amount</th><th>Status</th><th>Date</th></tr></thead>
-    <tbody>${[...orders].reverse().slice(0,8).map(o=>`
-      <tr>
-        <td><strong>${o.productName}</strong></td>
-        <td>${o.quantity.toLocaleString()}</td>
-        <td style="color:var(--accent2)">₹${o.totalPrice.toLocaleString('en-IN')}</td>
-        <td><span class="status-badge s-${o.status.replace(/ /g,'')}">${o.status.replace('InTransit','In Transit')}</span></td>
-        <td style="color:var(--muted)">${o.date}</td>
-      </tr>`).join('')}
-    </tbody>
-  </table></div>`;
+async function loadRetailerDashboard() {
+  document.getElementById('dashTitle').textContent = 'My Dashboard';
+  document.getElementById('dashSub').textContent   = 'Your purchase activity overview';
+  document.getElementById('dashRolePill').innerHTML = '<span class="role-pill role-retailer">🛒 Retailer</span>';
+  document.getElementById('dashTabs').innerHTML = '';
+  document.getElementById('dashContent').innerHTML = '<div class="empty"><p style="color:var(--muted)">Loading…</p></div>';
+  try {
+    const [stats, orders] = await Promise.all([ api('/dashboard/stats'), api('/orders') ]);
+    document.getElementById('dashGrid').innerHTML = `
+      <div class="stat-card"><div class="stat-card-label">Total Orders</div><div class="stat-card-value v-accent">${stats.totalOrders}</div></div>
+      <div class="stat-card"><div class="stat-card-label">Total Spent</div><div class="stat-card-value v-orange" style="font-size:1.3rem;">₹${stats.totalSpent.toLocaleString('en-IN')}</div></div>
+      <div class="stat-card"><div class="stat-card-label">Delivered</div><div class="stat-card-value v-green">${stats.delivered}</div></div>
+      <div class="stat-card"><div class="stat-card-label">In Transit</div><div class="stat-card-value v-yellow">${stats.inTransit}</div></div>
+      <div class="stat-card"><div class="stat-card-label">Pending</div><div class="stat-card-value v-accent">${stats.pending}</div></div>`;
+    if (!orders.length) {
+      document.getElementById('dashContent').innerHTML = '<div class="empty"><div class="empty-icon">📋</div><p>No orders yet — <a style="color:var(--accent);cursor:pointer" onclick="navigate(\'products\')">browse products</a></p></div>';
+      return;
+    }
+    document.getElementById('dashContent').innerHTML = `<h3 style="font-family:'Syne',sans-serif;margin-bottom:1rem;">Recent Orders</h3>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Product</th><th>Qty</th><th>Amount</th><th>Status</th><th>Date</th></tr></thead>
+        <tbody>${orders.slice(0, 8).map(o => `
+          <tr>
+            <td><strong>${o.productName}</strong></td>
+            <td>${o.quantity.toLocaleString()}</td>
+            <td style="color:var(--accent2)">₹${o.totalPrice.toLocaleString('en-IN')}</td>
+            <td><span class="status-badge s-${o.status}">${fmtStatus(o.status)}</span></td>
+            <td style="color:var(--muted)">${o.date}</td>
+          </tr>`).join('')}
+        </tbody>
+      </table></div>`;
+  } catch(e) { document.getElementById('dashContent').innerHTML = '<div class="empty"><p>' + e.message + '</p></div>'; }
 }
 
-function loadWholesalerDashboard(){
-  document.getElementById('dashTitle').textContent='Seller Dashboard';
-  document.getElementById('dashSub').textContent='Manage products, inventory & incoming orders';
-  document.getElementById('dashRolePill').innerHTML='<span class="role-pill role-wholesaler">🏭 Wholesaler</span>';
-  const myP=DB.products.filter(p=>p.sellerId===user.id);
-  const myO=DB.orders.filter(o=>o.sellerId===user.id);
-  const revenue=myO.filter(o=>o.status==='Delivered').reduce((s,o)=>s+o.totalPrice,0);
-  const pending=myO.filter(o=>o.status==='Pending').length;
-  document.getElementById('dashGrid').innerHTML=`
-    <div class="stat-card"><div class="stat-card-label">My Products</div><div class="stat-card-value v-accent">${myP.length}</div></div>
-    <div class="stat-card"><div class="stat-card-label">Total Orders</div><div class="stat-card-value v-orange">${myO.length}</div></div>
-    <div class="stat-card"><div class="stat-card-label">Revenue</div><div class="stat-card-value v-green" style="font-size:1.2rem;">₹${revenue.toLocaleString('en-IN')}</div></div>
-    <div class="stat-card"><div class="stat-card-label">Pending Orders</div><div class="stat-card-value v-yellow">${pending}</div></div>
-    <div class="stat-card"><div class="stat-card-label">Low Stock</div><div class="stat-card-value v-red">${myP.filter(p=>p.stock<100).length}</div></div>`;
-  const pendingBadge=pending>0?` <span style="background:var(--yellow);color:#000;border-radius:100px;padding:.1rem .5rem;font-size:.72rem;font-weight:700;">${pending}</span>`:'';
-  document.getElementById('dashTabs').innerHTML=`
-    <button class="section-tab${activeDashTab==='orders'?' active':''}" onclick="switchDashTab('orders')">📋 Incoming Orders${pendingBadge}</button>
-    <button class="section-tab${activeDashTab==='inventory'?' active':''}" onclick="switchDashTab('inventory')">📦 My Inventory</button>`;
-  renderDashContent();
+async function loadWholesalerDashboard() {
+  document.getElementById('dashTitle').textContent = 'Seller Dashboard';
+  document.getElementById('dashSub').textContent   = 'Manage products, inventory & incoming orders';
+  document.getElementById('dashRolePill').innerHTML = '<span class="role-pill role-wholesaler">🏭 Wholesaler</span>';
+  document.getElementById('dashContent').innerHTML = '<div class="empty"><p style="color:var(--muted)">Loading…</p></div>';
+  try {
+    const [stats, orders, products] = await Promise.all([
+      api('/dashboard/stats'),
+      api('/orders'),
+      api('/my/products')
+    ]);
+    // cache products for modals
+    products.forEach(p => productCache[p.id] = p);
+
+    document.getElementById('dashGrid').innerHTML = `
+      <div class="stat-card"><div class="stat-card-label">My Products</div><div class="stat-card-value v-accent">${stats.totalProducts}</div></div>
+      <div class="stat-card"><div class="stat-card-label">Total Orders</div><div class="stat-card-value v-orange">${stats.totalOrders}</div></div>
+      <div class="stat-card"><div class="stat-card-label">Revenue</div><div class="stat-card-value v-green" style="font-size:1.2rem;">₹${stats.revenue.toLocaleString('en-IN')}</div></div>
+      <div class="stat-card"><div class="stat-card-label">Pending Orders</div><div class="stat-card-value v-yellow">${stats.pending}</div></div>
+      <div class="stat-card"><div class="stat-card-label">Low Stock</div><div class="stat-card-value v-red">${stats.lowStock}</div></div>`;
+
+    const pendingBadge = stats.pending > 0
+      ? ` <span style="background:var(--yellow);color:#000;border-radius:100px;padding:.1rem .5rem;font-size:.72rem;font-weight:700;">${stats.pending}</span>`
+      : '';
+    document.getElementById('dashTabs').innerHTML = `
+      <button class="section-tab${activeDashTab==='orders'?' active':''}" onclick="switchDashTab('orders')">📋 Incoming Orders${pendingBadge}</button>
+      <button class="section-tab${activeDashTab==='inventory'?' active':''}" onclick="switchDashTab('inventory')">📦 My Inventory</button>`;
+
+    // store for render functions
+    window._wsOrders   = orders;
+    window._wsProducts = products;
+    renderDashContent();
+  } catch(e) {
+    document.getElementById('dashContent').innerHTML = '<div class="empty"><div class="empty-icon">⚠️</div><p>' + e.message + '</p></div>';
+  }
 }
 
-function switchDashTab(tab){
-  activeDashTab=tab;
-  document.querySelectorAll('.section-tab').forEach(t=>{
+function switchDashTab(tab) {
+  activeDashTab = tab;
+  document.querySelectorAll('.section-tab').forEach(t => {
     t.classList.toggle('active',
-      (tab==='orders'&&t.textContent.includes('Orders'))||(tab==='inventory'&&t.textContent.includes('Inventory'))
+      (tab === 'orders' && t.textContent.includes('Orders')) ||
+      (tab === 'inventory' && t.textContent.includes('Inventory'))
     );
   });
   renderDashContent();
 }
 
-function renderDashContent(){
-  if(activeDashTab==='orders') renderWholesalerOrders();
+function renderDashContent() {
+  if (activeDashTab === 'orders') renderWholesalerOrders();
   else renderWholesalerInventory();
 }
 
-function renderWholesalerOrders(){
-  const myO=DB.orders.filter(o=>o.sellerId===user.id);
-  if(!myO.length){
-    document.getElementById('dashContent').innerHTML='<div class="empty"><div class="empty-icon">📋</div><p>No orders received yet</p></div>';
+function renderWholesalerOrders() {
+  const orders = window._wsOrders || [];
+  if (!orders.length) {
+    document.getElementById('dashContent').innerHTML = '<div class="empty"><div class="empty-icon">📋</div><p>No orders received yet</p></div>';
     return;
   }
-  document.getElementById('dashContent').innerHTML=`<div class="table-wrap"><table>
+  document.getElementById('dashContent').innerHTML = `<div class="table-wrap"><table>
     <thead><tr><th>#</th><th>Buyer</th><th>Product</th><th>Qty</th><th>Amount</th><th>Status</th><th>Date</th><th>Actions</th></tr></thead>
-    <tbody>${[...myO].reverse().map(o=>`
-      <tr>
+    <tbody>${orders.map(o => `
+      <tr id="order-row-${o.id}">
         <td style="color:var(--muted)">#${o.id}</td>
         <td>${o.buyerName}</td>
         <td><strong>${o.productName}</strong></td>
         <td>${o.quantity.toLocaleString()}</td>
         <td style="color:var(--accent2);font-weight:600">₹${o.totalPrice.toLocaleString('en-IN')}</td>
-        <td><span class="status-badge s-${o.status.replace(/ /g,'')}">${o.status.replace('InTransit','In Transit')}</span></td>
+        <td><span class="status-badge s-${o.status}" id="status-badge-${o.id}">${fmtStatus(o.status)}</span></td>
         <td style="color:var(--muted)">${o.date}</td>
         <td>
           <div class="inv-actions">
-            ${o.status==='Pending'?`
+            ${o.status === 'Pending' ? `
               <button class="btn btn-green btn-xs" onclick="quickAccept(${o.id})">✓ Accept</button>
-              <button class="btn btn-danger btn-xs" onclick="quickRejectId(${o.id})">✗ Reject</button>
-            `:''}
+              <button class="btn btn-danger btn-xs" onclick="quickRejectId(${o.id})">✗ Reject</button>` : ''}
             <button class="btn btn-ghost btn-xs" onclick="openStatusModal(${o.id})">⚙ Status</button>
           </div>
         </td>
@@ -883,21 +914,22 @@ function renderWholesalerOrders(){
   </table></div>`;
 }
 
-function renderWholesalerInventory(){
-  const myP=DB.products.filter(p=>p.sellerId===user.id);
-  if(!myP.length){
-    document.getElementById('dashContent').innerHTML=`<div class="empty"><div class="empty-icon">📦</div><p>No products listed yet</p><br><button class="btn btn-primary" onclick="openAddProductModal()">＋ Add First Product</button></div>`;
+function renderWholesalerInventory() {
+  const products = window._wsProducts || [];
+  const orders   = window._wsOrders   || [];
+  if (!products.length) {
+    document.getElementById('dashContent').innerHTML = `<div class="empty"><div class="empty-icon">📦</div><p>No products listed yet</p><br><button class="btn btn-primary" onclick="openAddProductModal()">＋ Add First Product</button></div>`;
     return;
   }
-  document.getElementById('dashContent').innerHTML=`
+  document.getElementById('dashContent').innerHTML = `
     <div style="display:flex;justify-content:flex-end;margin-bottom:1rem;">
       <button class="btn btn-green btn-sm" onclick="openAddProductModal()">＋ Add New Product</button>
     </div>
     <div class="table-wrap"><table>
     <thead><tr><th>Product</th><th>Category</th><th>MRP</th><th>Bulk Price</th><th>Min Qty</th><th>Stock</th><th>Orders</th><th>Actions</th></tr></thead>
-    <tbody>${myP.map(p=>{
-      const orderCount=DB.orders.filter(o=>o.productId===p.id).length;
-      const stockColor=p.stock>200?'var(--green)':p.stock>50?'var(--yellow)':'var(--red)';
+    <tbody>${products.map(p => {
+      const orderCount = orders.filter(o => o.productId === p.id).length;
+      const stockColor = p.stock > 200 ? 'var(--green)' : p.stock > 50 ? 'var(--yellow)' : 'var(--red)';
       return `<tr>
         <td><span style="margin-right:.5rem;">${p.image}</span><strong>${p.name}</strong></td>
         <td><span class="chip">${p.category}</span></td>
@@ -919,102 +951,123 @@ function renderWholesalerInventory(){
   </table></div>`;
 }
 
-// ═══ ORDER STATUS ═══
-function quickAccept(id){
-  const idx=DB.orders.findIndex(o=>o.id===id);
-  if(idx>-1){DB.orders[idx].status='Accepted';saveDB();loadWholesalerDashboard();showToast('Order #'+id+' accepted ✅','success');}
+// ─── Order Status (Wholesaler) ────────────────────────────────
+// Updates are sent to the backend → all users see the real status on next load
+
+async function quickAccept(id) {
+  try {
+    await api('/orders/' + id + '/status', { method: 'PATCH', body: JSON.stringify({ status: 'Accepted' }) });
+    showToast('Order #' + id + ' accepted ✅', 'success');
+    await loadWholesalerDashboard();
+  } catch(e) { showToast(e.message, 'error'); }
 }
 
-function quickRejectId(id){
-  const idx=DB.orders.findIndex(o=>o.id===id);
-  if(idx>-1){DB.orders[idx].status='Rejected';saveDB();loadWholesalerDashboard();showToast('Order #'+id+' rejected','info');}
+async function quickRejectId(id) {
+  try {
+    await api('/orders/' + id + '/status', { method: 'PATCH', body: JSON.stringify({ status: 'Rejected' }) });
+    showToast('Order #' + id + ' rejected', 'info');
+    await loadWholesalerDashboard();
+  } catch(e) { showToast(e.message, 'error'); }
 }
 
-function openStatusModal(id){
-  statusTargetId=id;
-  const o=DB.orders.find(x=>x.id===id);
-  if(!o)return;
-  document.getElementById('statusOrderInfo').innerHTML=`
+function openStatusModal(id) {
+  statusTargetId = id;
+  // find from cached orders
+  const orders = window._wsOrders || [];
+  const o = orders.find(x => x.id === id);
+  if (!o) return;
+  document.getElementById('statusOrderInfo').innerHTML = `
     <div class="order-info-row"><span>Order #</span><span>${o.id}</span></div>
     <div class="order-info-row"><span>Buyer</span><span>${o.buyerName}</span></div>
     <div class="order-info-row"><span>Product</span><span>${o.productName}</span></div>
-    <div class="order-info-row"><span>Quantity</span><span>${o.quantity.toLocaleString()} units</span></div>
+    <div class="order-info-row"><span>Quantity</span><span>${o.quantity.toLocaleString()}</span></div>
     <div class="order-info-row"><span>Amount</span><span style="color:var(--accent2)">₹${o.totalPrice.toLocaleString('en-IN')}</span></div>
-    <div class="order-info-row"><span>Current Status</span><span><span class="status-badge s-${o.status.replace(/ /g,'')}">${o.status.replace('InTransit','In Transit')}</span></span></div>`;
-  document.getElementById('statusSelect').value=o.status;
+    <div class="order-info-row"><span>Current Status</span><span><span class="status-badge s-${o.status}">${fmtStatus(o.status)}</span></span></div>`;
+  document.getElementById('statusSelect').value = o.status;
   openModal('status');
 }
 
-function confirmStatusUpdate(){
-  const newStatus=document.getElementById('statusSelect').value;
-  const idx=DB.orders.findIndex(o=>o.id===statusTargetId);
-  if(idx>-1){DB.orders[idx].status=newStatus;saveDB();}
-  closeModal('status');
-  loadWholesalerDashboard();
-  showToast('Status updated → '+newStatus.replace('InTransit','In Transit'),'success');
+async function confirmStatusUpdate() {
+  const newStatus = document.getElementById('statusSelect').value;
+  try {
+    await api('/orders/' + statusTargetId + '/status', { method: 'PATCH', body: JSON.stringify({ status: newStatus }) });
+    closeModal('status');
+    showToast('Status updated → ' + fmtStatus(newStatus), 'success');
+    await loadWholesalerDashboard();  // re-fetch so wholesaler sees live data
+  } catch(e) { showToast(e.message, 'error'); }
 }
 
-function quickRejectFromModal(){
-  const idx=DB.orders.findIndex(o=>o.id===statusTargetId);
-  if(idx>-1){DB.orders[idx].status='Rejected';saveDB();}
-  closeModal('status');
-  loadWholesalerDashboard();
-  showToast('Order rejected','info');
+async function quickRejectFromModal() {
+  try {
+    await api('/orders/' + statusTargetId + '/status', { method: 'PATCH', body: JSON.stringify({ status: 'Rejected' }) });
+    closeModal('status');
+    showToast('Order rejected', 'info');
+    await loadWholesalerDashboard();
+  } catch(e) { showToast(e.message, 'error'); }
 }
 
-// ═══ PROFILE ═══
-function loadProfile(){
-  const el=document.getElementById('profileContent');
-  if(!user){el.innerHTML='<div class="empty"><div class="empty-icon">🔒</div><p>Sign in to view profile</p></div>';return;}
-  const initials=user.name.split(' ').map(n=>n[0]).join('').toUpperCase();
-  const isWS=user.role==='wholesaler';
-  const myCount=isWS?DB.products.filter(p=>p.sellerId===user.id).length:DB.orders.filter(o=>o.buyerId===user.id).length;
-  const revenue=isWS?DB.orders.filter(o=>o.sellerId===user.id&&o.status==='Delivered').reduce((s,o)=>s+o.totalPrice,0):null;
-  el.innerHTML=`
-    <div class="avatar">${initials}</div>
-    <div class="profile-name">${user.name}</div>
-    <div class="profile-email">${user.email}</div>
-    <div style="margin-bottom:1.5rem;margin-top:.3rem;"><span class="role-pill ${isWS?'role-wholesaler':'role-retailer'}">${isWS?'🏭 Wholesaler':'🛒 Retailer'}</span></div>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin-bottom:1.5rem;">
-      <div style="background:var(--surface);border-radius:10px;padding:1rem;">
-        <div style="font-size:.73rem;color:var(--muted);margin-bottom:.3rem;">${isWS?'PRODUCTS LISTED':'TOTAL ORDERS'}</div>
-        <div style="font-family:'Syne',sans-serif;font-size:1.6rem;font-weight:800;color:var(--accent)">${myCount}</div>
+// ─── Profile ──────────────────────────────────────────────────
+async function loadProfile() {
+  const el = document.getElementById('profileContent');
+  if (!user) { el.innerHTML = '<div class="empty"><div class="empty-icon">🔒</div><p>Sign in to view profile</p></div>'; return; }
+  const initials = user.name.split(' ').map(n => n[0]).join('').toUpperCase();
+  const isWS = user.role === 'wholesaler';
+  try {
+    const stats = await api('/dashboard/stats');
+    const myCount = isWS ? stats.totalProducts : stats.totalOrders;
+    const moneyLabel = isWS ? 'REVENUE EARNED' : 'TOTAL SPENT';
+    const moneyVal   = isWS ? stats.revenue : stats.totalSpent;
+    const moneyColor = isWS ? 'var(--green)' : 'var(--accent2)';
+    el.innerHTML = `
+      <div class="avatar">${initials}</div>
+      <div class="profile-name">${user.name}</div>
+      <div class="profile-email">${user.email}</div>
+      <div style="margin-bottom:1.5rem;margin-top:.3rem;"><span class="role-pill ${isWS?'role-wholesaler':'role-retailer'}">${isWS?'🏭 Wholesaler':'🛒 Retailer'}</span></div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin-bottom:1.5rem;">
+        <div style="background:var(--surface);border-radius:10px;padding:1rem;">
+          <div style="font-size:.73rem;color:var(--muted);margin-bottom:.3rem;">${isWS?'PRODUCTS LISTED':'TOTAL ORDERS'}</div>
+          <div style="font-family:'Syne',sans-serif;font-size:1.6rem;font-weight:800;color:var(--accent)">${myCount}</div>
+        </div>
+        <div style="background:var(--surface);border-radius:10px;padding:1rem;">
+          <div style="font-size:.73rem;color:var(--muted);margin-bottom:.3rem;">${moneyLabel}</div>
+          <div style="font-family:'Syne',sans-serif;font-size:1.2rem;font-weight:800;color:${moneyColor}">₹${moneyVal.toLocaleString('en-IN')}</div>
+        </div>
       </div>
-      ${isWS?`<div style="background:var(--surface);border-radius:10px;padding:1rem;">
-        <div style="font-size:.73rem;color:var(--muted);margin-bottom:.3rem;">REVENUE EARNED</div>
-        <div style="font-family:'Syne',sans-serif;font-size:1.2rem;font-weight:800;color:var(--green)">₹${revenue.toLocaleString('en-IN')}</div>
-      </div>`
-      :`<div style="background:var(--surface);border-radius:10px;padding:1rem;">
-        <div style="font-size:.73rem;color:var(--muted);margin-bottom:.3rem;">TOTAL SPENT</div>
-        <div style="font-family:'Syne',sans-serif;font-size:1.2rem;font-weight:800;color:var(--accent2)">₹${DB.orders.filter(o=>o.buyerId===user.id).reduce((s,o)=>s+o.totalPrice,0).toLocaleString('en-IN')}</div>
-      </div>`}
-    </div>
-    <hr/>
-    <div style="display:flex;gap:.7rem;margin-top:1.2rem;flex-wrap:wrap;">
-      <button class="btn btn-primary btn-sm" onclick="navigate('dashboard')">📊 Dashboard</button>
-      ${isWS?'<button class="btn btn-green btn-sm" onclick="openAddProductModal()">＋ Add Product</button>':'<button class="btn btn-ghost btn-sm" onclick="navigate(\'orders\')">My Orders</button>'}
-      <button class="btn btn-ghost btn-sm" onclick="navigate('products')">Browse Products</button>
-      <button class="btn btn-danger btn-sm" onclick="logout()">Logout</button>
-    </div>`;
+      <hr/>
+      <div style="display:flex;gap:.7rem;margin-top:1.2rem;flex-wrap:wrap;">
+        <button class="btn btn-primary btn-sm" onclick="navigate('dashboard')">📊 Dashboard</button>
+        ${isWS ? '<button class="btn btn-green btn-sm" onclick="openAddProductModal()">＋ Add Product</button>' : '<button class="btn btn-ghost btn-sm" onclick="navigate(\'orders\')">My Orders</button>'}
+        <button class="btn btn-ghost btn-sm" onclick="navigate('products')">Browse Products</button>
+        <button class="btn btn-danger btn-sm" onclick="logout()">Logout</button>
+      </div>`;
+  } catch(e) {
+    el.innerHTML = '<div class="empty"><p>' + e.message + '</p></div>';
+  }
 }
 
-// ═══ MODALS ═══
-function openModal(id){document.getElementById('modal-'+id).classList.remove('hidden');}
-function closeModal(id){document.getElementById('modal-'+id).classList.add('hidden');}
-function switchModal(from,to){closeModal(from);openModal(to);}
-document.querySelectorAll('.modal-overlay').forEach(m=>m.addEventListener('click',e=>{if(e.target===m)m.classList.add('hidden');}));
+// ─── Helpers ──────────────────────────────────────────────────
+function fmtStatus(s) {
+  return s === 'InTransit' ? 'In Transit' : s;
+}
 
-// ═══ TOAST ═══
-function showToast(msg,type='info'){
-  const el=document.createElement('div');
-  el.className='toast '+type;
-  el.innerHTML=`<span>${type==='success'?'✅':type==='error'?'❌':'ℹ️'}</span><span>${msg}</span>`;
+// ─── Modals ───────────────────────────────────────────────────
+function openModal(id)  { document.getElementById('modal-' + id).classList.remove('hidden'); }
+function closeModal(id) { document.getElementById('modal-' + id).classList.add('hidden'); }
+function switchModal(from, to) { closeModal(from); openModal(to); }
+document.querySelectorAll('.modal-overlay').forEach(m => m.addEventListener('click', e => { if (e.target === m) m.classList.add('hidden'); }));
+
+// ─── Toast ────────────────────────────────────────────────────
+function showToast(msg, type = 'info') {
+  const el = document.createElement('div');
+  el.className = 'toast ' + type;
+  el.innerHTML = `<span>${type==='success'?'✅':type==='error'?'❌':'ℹ️'}</span><span>${msg}</span>`;
   document.getElementById('toastContainer').appendChild(el);
-  setTimeout(()=>el.remove(),4200);
+  setTimeout(() => el.remove(), 4500);
 }
 
-// ═══ INIT ═══
+// ─── Init ─────────────────────────────────────────────────────
 updateNavAuth();
+
 </script>
 </body>
 </html>
